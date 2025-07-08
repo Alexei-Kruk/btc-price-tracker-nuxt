@@ -2,5 +2,8 @@
 export default defineNuxtConfig({
   compatibilityDate: '2025-05-15',
   devtools: { enabled: true },
-  modules: ['@nuxt/content', '@nuxt/eslint', '@nuxt/fonts']
+  modules: ['@nuxt/content', '@nuxt/eslint', '@nuxt/fonts'],
+  runtimeConfig: {
+    DATABASE_URL: process.env.DATABASE_URL
+  }
 })
