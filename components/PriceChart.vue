@@ -1,9 +1,21 @@
 <script setup lang="ts">
-import { useFetch } from '#app'
-import { ref, watch } from 'vue'
+import type { ApexOptions } from 'apexcharts'
+import { computed, onMounted, ref, watch } from 'vue'
+
+interface ApiDataPoint {
+  timestamp: string
+  price: number
+}
+
+interface ChartDataPoint {
+  x: number
+  y: number
+}
+
+type Period = 'day' | 'week' | 'month' | 'year' | 'custom'
 
 const props = withDefaults(defineProps<{
-  period?: string
+  period?: Period
   customFrom?: string
   customTo?: string
 }>(), {
@@ -12,67 +24,225 @@ const props = withDefaults(defineProps<{
   customTo: ''
 })
 
-const series = ref([{ name: 'BTC Price', data: [] }])
-const chartOptions = ref({
-  chart: {
-    id: 'btc-chart'
-  },
-  xaxis: {
-    type: 'datetime'
-  },
-  stroke: {
-    curve: 'smooth'
+const series = ref([{ 
+  name: 'BTC Price', 
+  data: [] as ChartDataPoint[]
+}])
+
+const isLoading = ref(false)
+const errorMessage = ref<string | null>(null)
+
+
+const chartOptions = computed<ApexOptions>(() => {
+  let xLabelFormat = 'dd MMM'
+  let tooltipFormat = 'dd MMM yyyy HH:mm'
+  if (props.period === 'custom' && props.customFrom && props.customTo) {
+    const fromDate = new Date(props.customFrom)
+    const toDate = new Date(props.customTo)
+    const diffMs = toDate.getTime() - fromDate.getTime()
+    const diffDays = diffMs / (1000 * 60 * 60 * 24)
+    if (diffDays <= 2) {
+      xLabelFormat = 'HH:mm'
+      tooltipFormat = 'dd MMM yyyy HH:mm'
+    } else if (diffDays <= 14) {
+      xLabelFormat = 'dd MMM HH:mm'
+      tooltipFormat = 'dd MMM yyyy HH:mm'
+    } else if (diffDays <= 90) {
+      xLabelFormat = 'dd MMM'
+      tooltipFormat = 'dd MMM yyyy'
+    } else {
+      xLabelFormat = 'dd MMM'
+      tooltipFormat = 'dd MMM yyyy'
+    }
+  } else {
+    switch (props.period) {
+      case 'day':
+        xLabelFormat = 'HH:mm'
+        tooltipFormat = 'dd MMM yyyy HH:mm'
+        break
+      case 'week':
+        xLabelFormat = 'dd MMM HH:mm'
+        tooltipFormat = 'dd MMM yyyy HH:mm'
+        break
+      case 'month':
+        xLabelFormat = 'dd MMM'
+        tooltipFormat = 'dd MMM yyyy'
+        break
+      case 'year':
+        xLabelFormat = 'dd MMM'
+        tooltipFormat = 'dd MMM yyyy'
+        break
+    }
+  }
+  return {
+    chart: {
+      type: 'line',
+      toolbar: { show: true }
+    },
+    xaxis: {
+      type: 'datetime',
+      labels: { format: xLabelFormat }
+    },
+    yaxis: {
+      labels: { formatter: (value: number) => `$${value.toFixed(2)}` }
+    },
+    stroke: { curve: 'smooth', width: 2, colors: ['#F7931A'] },
+    tooltip: {
+      x: { format: tooltipFormat },
+      y: { formatter: (value: number) => `$${value.toFixed(2)}` }
+    }
   }
 })
 
-// функция для получения URL API
-function buildUrl() {
-  if (props.period === 'custom' && props.customFrom && props.customTo) {
+function buildUrl(): string | null {
+  if (props.period === 'custom') {
+    if (!props.customFrom || !props.customTo) {
+      errorMessage.value = 'Укажите начальную и конечную даты'
+      return null
+    }
     return `/api/prices?from=${props.customFrom}&to=${props.customTo}`
   }
 
-  const ranges: Record<string, string> = {
-    day: '1d',
-    week: '7d',
-    month: '1m',
-    year: '1y'
+  const daysMap: Record<Exclude<Period, 'custom'>, number> = {
+    day: 1,
+    week: 7,
+    month: 30,
+    year: 365
   }
 
-  const rangeParam = ranges[props.period] || '1d'
-  return `/api/prices?range=${rangeParam}`
+  return `/api/prices?days=${daysMap[props.period]}`
 }
 
-// загрузка данных
 async function loadData() {
   const url = buildUrl()
+  if (!url) return
 
-  const { data, error } = await useFetch(url)
+  isLoading.value = true
+  errorMessage.value = null
 
-  if (error.value) {
-    console.error('API Error:', error.value)
-    return
+  try {
+    const data = await $fetch<ApiDataPoint[]>(url)
+
+    if (!Array.isArray(data)) {
+      throw new Error('Некорректный формат данных')
+    }
+
+    series.value[0].data = aggregateData(data, props.period)
+    
+  } catch (err) {
+    errorMessage.value = err instanceof Error ? err.message : 'Ошибка загрузки'
+    console.error('Ошибка:', err)
+  } finally {
+    isLoading.value = false
   }
-
-  if (!data.value || !Array.isArray(data.value)) {
-    console.warn('Нет данных с API или неверный формат')
-    return
-  }
-
-  series.value[0].data = data.value.map(p => ({
-    x: new Date(p.timestamp).getTime(),
-    y: p.price
-  }))
 }
 
-// реакция на изменение пропсов
-watch(() => [props.period, props.customFrom, props.customTo], loadData, { immediate: true })
+// Функция для агрегации данных в зависимости от периода
+function aggregateData(data: ApiDataPoint[], period: Period): ChartDataPoint[] {
+  if (period === 'day') {
+    return data.map(item => ({
+      x: new Date(item.timestamp).getTime(),
+      y: item.price
+    }))
+  }
+
+  const grouped = new Map<string, {sum: number, count: number}>()
+
+  data.forEach(item => {
+    const date = new Date(item.timestamp)
+    let key: string
+    
+    if (period === 'week') {
+      const hours = Math.floor(date.getHours() / 4) * 4
+      key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${hours}`
+    } else {
+      key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+    }
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {sum: 0, count: 0})
+    }
+    const group = grouped.get(key)!
+    group.sum += item.price
+    group.count++
+  })
+
+  return Array.from(grouped.entries()).map(([key, value]) => {
+    const [year, month, day, hour] = key.split('-').map(Number)
+    const date = hour !== undefined 
+      ? new Date(year, month, day, hour)
+      : new Date(year, month, day)
+      
+    return {
+      x: date.getTime(),
+      y: parseFloat((value.sum / value.count).toFixed(2))
+    }
+  })
+}
+
+onMounted(loadData)
+watch(
+  () => [props.period, props.customFrom, props.customTo],
+  () => {
+    const timer = setTimeout(loadData, 60)
+    return () => clearTimeout(timer)
+  }
+)
 </script>
 
 <template>
-  <apexchart
-    type="line"
-    :options="chartOptions"
-    :series="series"
-    height="350"
-  />
+  <div class="chart-container">
+    <div v-if="isLoading" class="loading">Загрузка...</div>
+    <div v-else-if="errorMessage" class="error">
+      {{ errorMessage }} <button @click="loadData">Повторить</button>
+    </div>
+    <div v-else-if="!isLoading && !errorMessage && series[0].data.length === 0" class="empty-state">
+      Нет данных за выбранный период
+    </div>
+    <ClientOnly>
+      <ApexChart
+        v-if="!isLoading && !errorMessage && series[0].data.length > 0"
+        type="line"
+        height="350"
+        :options="chartOptions"
+        :series="series"
+      />
+    </ClientOnly>
+  </div>
 </template>
+
+<style scoped>
+.chart-container {
+  position: relative;
+  min-height: 350px;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 16px;
+  background: white;
+}
+
+.loading-state,
+.error-state,
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 350px;
+  color: #666;
+}
+
+.error-state button {
+  margin-top: 10px;
+  padding: 5px 15px;
+  background: #F7931A;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.chart {
+  width: 100%;
+}
+</style>

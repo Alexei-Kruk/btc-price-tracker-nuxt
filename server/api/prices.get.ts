@@ -1,50 +1,79 @@
 import { Pool } from 'pg'
 
-export default defineEventHandler(async (event) => {
-  const query = getQuery(event)
+interface QueryParams {
+  from?: string
+  to?: string
+  range?: string
+}
 
+export default defineEventHandler(async (event) => {
+  const query = getQuery(event) as QueryParams
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL
   })
-
   const client = await pool.connect()
 
+  // Определяем период и нужную агрегацию
+  let granularity = 'minute'
+  let interval = '1 day'
+  if (query.from && query.to) {
+    // Если пользователь выбрал диапазон, определяем гранулярность по разнице дат
+    const fromDate = new Date(query.from)
+    const toDate = new Date(query.to)
+    const diffMs = toDate.getTime() - fromDate.getTime()
+    const diffDays = diffMs / (1000 * 60 * 60 * 24)
+    if (diffDays <= 2) granularity = 'minute'
+    else if (diffDays <= 14) granularity = 'hour'
+    else if (diffDays <= 90) granularity = 'day'
+    else granularity = 'week'
+  } else {
+    // Preset periods
+    const range = query.range || '1d'
+    if (range === '1d') { granularity = 'minute'; interval = '1 day' }
+    else if (range === '7d') { granularity = 'hour'; interval = '7 days' }
+    else if (range === '1m') { granularity = 'day'; interval = '1 month' }
+    else if (range === '1y') { granularity = 'week'; interval = '1 year' }
+  }
+
   try {
-    let result
+    let sql: string
+    let params: string[] = []
 
-    // 1. Обработка кастомного диапазона: ?from=...&to=...
     if (query.from && query.to) {
-      const from = query.from.toString()
-      const to = query.to.toString()
-
-      result = await client.query(
-        `SELECT * FROM prices WHERE timestamp BETWEEN $1 AND $2 ORDER BY timestamp ASC`,
-        [from, to]
-      )
+      sql = `
+        SELECT 
+          date_trunc('${granularity}', timestamp) as ts,
+          AVG(price_usd) as price_usd
+        FROM btc_prices
+        WHERE timestamp BETWEEN $1 AND $2
+        GROUP BY ts
+        ORDER BY ts ASC
+      `
+      params = [query.from, query.to]
     } else {
-      // 2. Обработка фиксированных диапазонов: ?range=1d|7d|1m|1y
-      const range = typeof query.range === 'string' ? query.range : '1d'
-
-      const ranges: Record<string, string> = {
-        '1d': "NOW() - INTERVAL '1 day'",
-        '7d': "NOW() - INTERVAL '7 day'",
-        '1m': "NOW() - INTERVAL '1 month'",
-        '1y': "NOW() - INTERVAL '1 year'"
-      }
-
-      const fromExpr = ranges[range] || ranges['1d']
-
-      result = await client.query(
-        `SELECT * FROM prices WHERE timestamp >= ${fromExpr} ORDER BY timestamp ASC`
-      )
+      sql = `
+        SELECT 
+          date_trunc('${granularity}', timestamp) as ts,
+          AVG(price_usd) as price_usd
+        FROM btc_prices
+        WHERE timestamp >= NOW() - INTERVAL '${interval}'
+        GROUP BY ts
+        ORDER BY ts ASC
+      `
     }
 
-    return result.rows
+    type Row = { ts: Date, price_usd: number }
+    const result = await client.query<Row>(sql, params)
+    return result.rows.map(row => ({
+      timestamp: row.ts,
+      price: parseFloat(row.price_usd.toString())
+    }))
+
   } catch (err) {
-    console.error('Ошибка при получении данных из базы:', err)
+    console.error('Database error:', err)
     return createError({
       statusCode: 500,
-      statusMessage: 'Ошибка при получении данных из базы'
+      statusMessage: 'Failed to fetch data'
     })
   } finally {
     client.release()
