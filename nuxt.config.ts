@@ -5,5 +5,9 @@ export default defineNuxtConfig({
   modules: ['@nuxt/content', '@nuxt/eslint', '@nuxt/fonts'],
   runtimeConfig: {
     DATABASE_URL: process.env.DATABASE_URL
+  },
+  components: true,
+  build: {
+    transpile: ['vue3-apexcharts']
   }
 })

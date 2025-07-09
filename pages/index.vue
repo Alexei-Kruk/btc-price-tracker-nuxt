@@ -40,14 +40,14 @@ function applyCustomRange() {
         </label>
         <label>
           До:
-          <input v-model="customTo" type="date" />
+          <input v-model="customTo" type="date">
         </label>
         <button @click="applyCustomRange">Применить</button>
       </div>
     </section>
 
     <section class="chart">
-      <PriceChart :custom-from="customFrom" :period="period" />
+      <PriceChart :period="period" :custom-from="customFrom" :custom-to="customTo" />
     </section>
 
     <section class="stats">
