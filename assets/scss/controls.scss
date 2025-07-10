@@ -1,0 +1,134 @@
+.controls {
+  &_main {
+    margin-bottom: 2rem;
+
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    background: rgba(248,249,250,0.85);
+    border-radius: 12px;
+
+    @media (max-width: 768px) {
+      padding: 1rem;
+    }
+  }
+
+  &__presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  &__preset {
+    padding: 0.75rem 1rem;
+    min-width: 100px;
+    flex: 1;
+
+    color: #0369A1;
+    font-weight: 600;
+
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    background: rgba(224,242,254,0.8);
+    border: none;
+    border-radius: 8px;
+
+    transition: all 0.2s ease;
+
+    cursor: pointer;
+
+    @media (max-width: 768px) {
+      flex: 1 1 calc(50% - 0.5rem);
+    }
+
+    &_active {
+      color: white;
+
+      box-shadow: 0 2px 5px rgba(3, 105, 161, 0.18);
+      background: #0369A1;
+    }
+
+    &:not(.controls__preset_active):hover {
+      background: #BAE6FD;
+    }
+  }
+
+  &__custom-range {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+
+    @media (max-width: 768px) {
+      flex-direction: column;
+      align-items: stretch;
+    }
+  }
+
+  &__label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+
+    color: #374151;
+    font-weight: 500;
+  }
+
+  &__label-text {
+    opacity: 0.8;
+  }
+
+  &__input[type="date"] {
+    padding: 0.5rem 0.75rem;
+
+    font-family: inherit;
+
+    background: rgba(255,255,255,0.7);
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
+
+    transition: border-color 0.2s;
+
+    &:focus {
+      border-color: #0070F3;
+      outline: none;
+    }
+  }
+
+  &__apply {
+    padding: 0.5rem 1.25rem;
+    height: 36px;
+    align-self: flex-end;
+
+    color: white;
+    font-weight: 600;
+
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    background: #00B894;
+    border: none;
+    border-radius: 8px;
+
+    transition: all 0.2s ease;
+
+    cursor: pointer;
+
+    &:hover:not(.controls__apply_disabled) {
+      background: #019875;
+
+      transform: translateY(-1px);
+    }
+
+    @media (max-width: 768px) {
+      width: 100%;
+    }
+
+    &_disabled {
+      background: #BDC3C7;
+      opacity: 0.7;
+
+      cursor: not-allowed;
+    }
+  }
+}

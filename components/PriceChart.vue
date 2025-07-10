@@ -84,7 +84,14 @@ const chartOptions = computed<ApexOptions>(() => {
       labels: { format: xLabelFormat }
     },
     yaxis: {
-      labels: { formatter: (value: number) => `$${value.toFixed(2)}` }
+      labels: {
+        formatter: (value: number) => {
+          if (value >= 1000) {
+            return `$${Math.round(value / 1000)}K`
+          }
+          return `$${value.toFixed(2)}`
+        }
+      }
     },
     stroke: { curve: 'smooth', width: 2, colors: ['#F7931A'] },
     tooltip: {

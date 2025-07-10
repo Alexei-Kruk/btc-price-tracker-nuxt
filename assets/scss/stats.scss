@@ -1,0 +1,42 @@
+.stats {
+  &_main {
+    margin-bottom: 2rem;
+
+    padding: 1.5rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    background: rgba(248,249,250,0.85);
+    border-radius: 12px;
+
+    @media (max-width: 768px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  &__item {
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    background: rgba(255,255,255,0.85);
+    border-radius: 8px;
+  }
+
+  &__label {
+    color: #7F8C8D;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  &__value {
+    color: #2C3E50;
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
+}
