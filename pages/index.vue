@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import PriceChart from '~/components/PriceChart.vue'
-
-useHead({
-	title: "Bitcoin Price Tracker",
-});
+import PriceChart from '../components/PriceChart.vue'
 
 type Period = 'day' | 'week' | 'month' | 'year' | 'custom'
 
@@ -80,7 +76,7 @@ function updateStats(data: { current: number; min: number; max: number }): void 
             type="date" 
             :max="customTo || undefined"
             class="controls__input"
-            @change="period = 'custom'"
+            @change="() => period = 'custom'"
           >
         </label>
         <label class="controls__label">
@@ -90,7 +86,7 @@ function updateStats(data: { current: number; min: number; max: number }): void 
             type="date" 
             :min="customFrom || undefined"
             class="controls__input"
-            @change="period = 'custom'"
+            @change="() => period = 'custom'"
           >
         </label>
         <button 

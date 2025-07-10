@@ -1,4 +1,4 @@
-@import './page.scss';
-@import './controls.scss';
-@import './chart.scss';
-@import './stats.scss';
+@use './page.scss' as *;
+@use './controls.scss' as *;
+@use './chart.scss' as *;
+@use './stats.scss' as *;

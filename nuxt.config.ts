@@ -24,4 +24,9 @@ export default defineNuxtConfig({
 			crawlLinks: false,
 		},
 	},
+	app: {
+		head: {
+		titleTemplate: 'Bitcoin Price Tracker'
+		}
+	}
 });
