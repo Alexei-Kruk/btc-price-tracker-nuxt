@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:20-alpine3.20
 
 WORKDIR /app
 
@@ -6,4 +6,5 @@ COPY . .
 
 RUN npm install
 
-CMD ["npm", "start"]
+RUN chmod +x entrypoint.sh
+CMD ["./entrypoint.sh"]
