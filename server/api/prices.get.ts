@@ -7,11 +7,32 @@ interface QueryParams {
 }
 
 export default defineEventHandler(async (event) => {
-  const query = getQuery(event) as QueryParams
+  const query = getQuery(event) as QueryParams & { all?: string }
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL
   })
   const client = await pool.connect()
+
+  // Если ?all=1 — возвращаем всю историю без агрегации
+  if (query.all === '1') {
+    try {
+      const result = await client.query<{ ts: Date, price_usd: number }>(
+        `SELECT (timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow') as ts, price_usd FROM btc_prices ORDER BY ts ASC`
+      )
+      return result.rows.map(row => ({
+        timestamp: row.ts,
+        price: parseFloat(row.price_usd.toString())
+      }))
+    } catch (err) {
+      console.error('Database error:', err)
+      return createError({
+        statusCode: 500,
+        statusMessage: 'Failed to fetch data'
+      })
+    } finally {
+      client.release()
+    }
+  }
 
   // Определяем период и нужную агрегацию
   let granularity = 'minute'
@@ -42,7 +63,7 @@ export default defineEventHandler(async (event) => {
     if (query.from && query.to) {
       sql = `
         SELECT 
-          date_trunc('${granularity}', timestamp) as ts,
+          date_trunc('${granularity}', (timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) as ts,
           AVG(price_usd) as price_usd
         FROM btc_prices
         WHERE timestamp BETWEEN $1 AND $2
@@ -51,12 +72,25 @@ export default defineEventHandler(async (event) => {
       `
       params = [query.from, query.to]
     } else {
+      // Считаем начало периода от локальной полуночи Europe/Moscow
+      let periodStartExpr = '';
+      if (interval === '1 day') {
+        periodStartExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC'))`;
+      } else if (interval === '7 days') {
+        periodStartExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) - INTERVAL '6 days') AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')`;
+      } else if (interval === '1 month') {
+        periodStartExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) - INTERVAL '29 days') AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')`;
+      } else if (interval === '1 year') {
+        periodStartExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) - INTERVAL '364 days') AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')`;
+      } else {
+        periodStartExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC'))`;
+      }
       sql = `
         SELECT 
-          date_trunc('${granularity}', timestamp) as ts,
+          date_trunc('${granularity}', (timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) as ts,
           AVG(price_usd) as price_usd
         FROM btc_prices
-        WHERE timestamp >= NOW() - INTERVAL '${interval}'
+        WHERE timestamp >= ${periodStartExpr}
         GROUP BY ts
         ORDER BY ts ASC
       `

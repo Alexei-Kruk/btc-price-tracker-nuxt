@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ApexOptions } from 'apexcharts'
 import { computed, onMounted, ref, watch } from 'vue'
+import { DateTime } from 'luxon'
 
 interface ApiDataPoint {
   timestamp: string
@@ -148,7 +149,7 @@ async function loadData() {
 function aggregateData(data: ApiDataPoint[], period: Period): ChartDataPoint[] {
   if (period === 'day') {
     return data.map(item => ({
-      x: new Date(item.timestamp).getTime(),
+      x: DateTime.fromISO(item.timestamp, { zone: 'Europe/Moscow' }).toMillis(),
       y: item.price
     }))
   }
@@ -156,16 +157,14 @@ function aggregateData(data: ApiDataPoint[], period: Period): ChartDataPoint[] {
   const grouped = new Map<string, {sum: number, count: number}>()
 
   data.forEach(item => {
-    const date = new Date(item.timestamp)
+    const date = DateTime.fromISO(item.timestamp, { zone: 'Europe/Moscow' })
     let key: string
-    
     if (period === 'week') {
-      const hours = Math.floor(date.getHours() / 4) * 4
-      key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${hours}`
+      const hours = Math.floor(date.hour / 4) * 4
+      key = `${date.year}-${date.month}-${date.day}-${hours}`
     } else {
-      key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+      key = `${date.year}-${date.month}-${date.day}`
     }
-
     if (!grouped.has(key)) {
       grouped.set(key, {sum: 0, count: 0})
     }
@@ -173,15 +172,13 @@ function aggregateData(data: ApiDataPoint[], period: Period): ChartDataPoint[] {
     group.sum += item.price
     group.count++
   })
-
   return Array.from(grouped.entries()).map(([key, value]) => {
     const [year, month, day, hour] = key.split('-').map(Number)
     const date = hour !== undefined 
-      ? new Date(year, month, day, hour)
-      : new Date(year, month, day)
-      
+      ? DateTime.fromObject({ year, month, day, hour }, { zone: 'Europe/Moscow' })
+      : DateTime.fromObject({ year, month, day }, { zone: 'Europe/Moscow' })
     return {
-      x: date.getTime(),
+      x: date.toMillis(),
       y: parseFloat((value.sum / value.count).toFixed(2))
     }
   })

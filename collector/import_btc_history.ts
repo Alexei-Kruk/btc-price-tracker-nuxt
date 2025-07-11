@@ -1,7 +1,7 @@
 import axios from "axios"
 import { Client } from "pg"
 
-const PG_URL = process.env.PG_URL || "postgresql://postgres:postgres@localhost:5432/btc";
+const PG_URL = process.env.DATABASE_URL || "postgresql://postgres:postgres@db:5432/btc";
 const BINANCE_API = "https://api.binance.com/api/v3/klines";
 
 export interface BinanceKline {
@@ -18,7 +18,6 @@ export interface BinanceKline {
   takerBuyQuoteAssetVolume: string;
   ignore: string;
 }
-
 
 type RawBinanceKline = [
   number, // openTime
@@ -74,8 +73,8 @@ async function main() {
   let start = from;
   const oneDay = 24 * 60 * 60 * 1000;
   while (start < to) {
-  const end = Math.min(start + oneDay * 1000, to); // 1000 дней максимум за раз
-  const chunk = await fetchBinanceKlines(symbol, interval, start, end);
+    const end = Math.min(start + oneDay * 1000, to); // 1000 дней максимум за раз
+    const chunk = await fetchBinanceKlines(symbol, interval, start, end);
     if (chunk.length === 0) break;
     klines = klines.concat(chunk);
     if (chunk.length < 1000) break;
@@ -83,6 +82,8 @@ async function main() {
     await new Promise(r => setTimeout(r, 500)); // задержка для обхода лимитов
   }
 
+  // Сортируем klines по openTime по убыванию (от новых к старым)
+  klines.sort((a, b) => b.openTime - a.openTime);
   const prices: [number, number][] = klines.map(k => [k.openTime, parseFloat(k.close)]);
 
   const client = new Client({ connectionString: PG_URL });
