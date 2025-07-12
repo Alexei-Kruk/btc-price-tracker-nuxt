@@ -7,7 +7,7 @@ interface QueryParams {
 }
 
 export default defineEventHandler(async (event) => {
-  const query = getQuery(event) as QueryParams & { all?: string }
+  const query = getQuery(event) as QueryParams & { all?: string, days?: string }
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL
   })
@@ -60,6 +60,7 @@ export default defineEventHandler(async (event) => {
     let sql: string
     let params: string[] = []
 
+    // Если кастомный диапазон или days
     if (query.from && query.to) {
       sql = `
         SELECT 
@@ -71,26 +72,62 @@ export default defineEventHandler(async (event) => {
         ORDER BY ts ASC
       `
       params = [query.from, query.to]
-    } else {
-      // Считаем начало периода от локальной полуночи Europe/Moscow
-      let periodStartExpr = '';
-      if (interval === '1 day') {
-        periodStartExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC'))`;
-      } else if (interval === '7 days') {
-        periodStartExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) - INTERVAL '6 days') AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')`;
-      } else if (interval === '1 month') {
-        periodStartExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) - INTERVAL '29 days') AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')`;
-      } else if (interval === '1 year') {
-        periodStartExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) - INTERVAL '364 days') AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')`;
+    } else if (query.days) {
+      // days — вычисляем from/to на сервере
+      if (query.days === '1') {
+        // Для day: последние 24 часа, агрегация по 5 минутам
+        sql = `
+          SELECT 
+            date_trunc('minute', (timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) -
+              INTERVAL '1 minute' * (EXTRACT(MINUTE FROM (timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow'))::int % 5) as ts,
+            AVG(price_usd) as price_usd
+          FROM btc_prices
+          WHERE (timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow') >= (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow') - INTERVAL '24 hours'
+            AND (timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow') <= (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')
+          GROUP BY ts
+          ORDER BY ts ASC
+        `
       } else {
-        periodStartExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC'))`;
+        sql = `
+          SELECT 
+            date_trunc('${granularity}', (timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) as ts,
+            AVG(price_usd) as price_usd
+          FROM btc_prices
+          WHERE timestamp BETWEEN (
+            (date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) - INTERVAL '${parseInt(query.days)-1} days') AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC'
+          ) AND (
+            (date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) + INTERVAL '1 day' - INTERVAL '1 second') AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC'
+          )
+          GROUP BY ts
+          ORDER BY ts ASC
+        `
+      }
+    } else {
+      // Явно вычисляем from/to для каждого пресета (range)
+      let fromExpr = '';
+      let toExpr = '';
+      if (interval === '1 day') {
+        fromExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC'))`;
+        toExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) + INTERVAL '1 day' - INTERVAL '1 second') AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')`;
+      } else if (interval === '7 days') {
+        fromExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) - INTERVAL '6 days') AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')`;
+        toExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) + INTERVAL '1 day' - INTERVAL '1 second') AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')`;
+      } else if (interval === '1 month') {
+        fromExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) - INTERVAL '29 days') AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')`;
+        toExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) + INTERVAL '1 day' - INTERVAL '1 second') AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')`;
+      } else if (interval === '1 year') {
+        fromExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) - INTERVAL '364 days') AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')`;
+        toExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) + INTERVAL '1 day' - INTERVAL '1 second') AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')`;
+      } else {
+        fromExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC'))`;
+        toExpr = `((date_trunc('day', (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) + INTERVAL '1 day' - INTERVAL '1 second') AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')`;
       }
       sql = `
         SELECT 
           date_trunc('${granularity}', (timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) as ts,
           AVG(price_usd) as price_usd
         FROM btc_prices
-        WHERE timestamp >= ${periodStartExpr}
+        WHERE timestamp BETWEEN ${fromExpr} AND ${toExpr}
         GROUP BY ts
         ORDER BY ts ASC
       `

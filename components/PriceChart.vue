@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ApexOptions } from 'apexcharts'
-import { computed, onMounted, ref, watch } from 'vue'
 import { DateTime } from 'luxon'
+import { computed, onMounted, ref, watch } from 'vue'
 
 interface ApiDataPoint {
   timestamp: string
@@ -78,7 +78,8 @@ const chartOptions = computed<ApexOptions>(() => {
   return {
     chart: {
       type: 'line',
-      toolbar: { show: true }
+      toolbar: { show: false },
+      zoom: { enabled: false }
     },
     xaxis: {
       type: 'datetime',
@@ -148,10 +149,28 @@ async function loadData() {
 // Функция для агрегации данных в зависимости от периода
 function aggregateData(data: ApiDataPoint[], period: Period): ChartDataPoint[] {
   if (period === 'day') {
-    return data.map(item => ({
-      x: DateTime.fromISO(item.timestamp, { zone: 'Europe/Moscow' }).toMillis(),
-      y: item.price
-    }))
+    // Агрегация по 5 минутам за последние 24 часа
+    const grouped = new Map<string, { sum: number, count: number }>()
+    data.forEach(item => {
+      const date = DateTime.fromISO(item.timestamp, { zone: 'Europe/Moscow' })
+      // Округляем минуты до ближайших 5
+      const roundedMinute = Math.floor(date.minute / 5) * 5
+      const key = `${date.year}-${date.month}-${date.day}-${date.hour}-${roundedMinute}`
+      if (!grouped.has(key)) {
+        grouped.set(key, { sum: 0, count: 0 })
+      }
+      const group = grouped.get(key)!
+      group.sum += item.price
+      group.count++
+    })
+    return Array.from(grouped.entries()).map(([key, value]) => {
+      const [year, month, day, hour, minute] = key.split('-').map(Number)
+      const date = DateTime.fromObject({ year, month, day, hour, minute }, { zone: 'Europe/Moscow' })
+      return {
+        x: date.toMillis(),
+        y: parseFloat((value.sum / value.count).toFixed(2))
+      }
+    }).sort((a, b) => a.x - b.x)
   }
 
   const grouped = new Map<string, {sum: number, count: number}>()
